@@ -1,52 +1,54 @@
 #if canImport(Combine)
-import Combine
-import GRDB
-import XCTest
+  import Combine
+  import GRDB
+  import XCTest
 
-private struct Player: Codable, FetchableRecord, PersistableRecord {
+  private struct Player: Codable, FetchableRecord, PersistableRecord {
     var id: Int64
     var name: String
     var score: Int?
-    
-    static func createTable(_ db: Database) throws {
-        try db.create(table: "player") { t in
-            t.autoIncrementedPrimaryKey("id")
-            t.column("name", .text).notNull()
-            t.column("score", .integer)
-        }
-    }
-}
 
-class DatabaseReaderReadPublisherTests : XCTestCase {
-    
-    // MARK: -
-    
-    func testReadPublisher() throws {
-        func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
-            try writer.write(Player.createTable)
-            return writer
-        }
-        
-        func test(reader: some DatabaseReader) throws {
-            let publisher = reader.readPublisher(value: { db in
-                try Player.fetchCount(db)
-            })
-            let recorder = publisher.record()
-            let value = try wait(for: recorder.single, timeout: 5)
-            XCTAssertEqual(value, 0)
-        }
-        
-        try Test(test).run { try setUp(DatabaseQueue()) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshotPool() }
-#endif
+    static func createTable(_ db: Database) throws {
+      try db.create(table: "player") { t in
+        t.autoIncrementedPrimaryKey("id")
+        t.column("name", .text).notNull()
+        t.column("score", .integer)
+      }
     }
-    
+  }
+
+  class DatabaseReaderReadPublisherTests: XCTestCase {
+
     // MARK: -
-    
+
+    func testReadPublisher() throws {
+      func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
+        try writer.write(Player.createTable)
+        return writer
+      }
+
+      func test(reader: some DatabaseReader) throws {
+        let publisher = reader.readPublisher(value: { db in
+          try Player.fetchCount(db)
+        })
+        let recorder = publisher.record()
+        let value = try wait(for: recorder.single, timeout: 5)
+        XCTAssertEqual(value, 0)
+      }
+
+      try Test(test).run { try setUp(DatabaseQueue()) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
+        try Test(test).runAtTemporaryDatabasePath {
+          try setUp(DatabasePool(path: $0)).makeSnapshotPool()
+        }
+      #endif
+    }
+
+    // MARK: -
+
     // TODO: fix crasher
     //
     // * thread #1, queue = 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x20)
@@ -124,159 +126,171 @@ class DatabaseReaderReadPublisherTests : XCTestCase {
     //     frame #71: 0x00007fff72311cc9 libdyld.dylib`start + 1
     //     frame #72: 0x00007fff72311cc9 libdyld.dylib`start + 1
     func testReadPublisherError() throws {
-        func test(reader: some DatabaseReader) throws {
-            let publisher = reader.readPublisher(value: { db in
-                try Row.fetchAll(db, sql: "THIS IS NOT SQL")
-            })
-            let recorder = publisher.record()
-            let recording = try wait(for: recorder.recording, timeout: 5)
-            XCTAssertTrue(recording.output.isEmpty)
-            assertFailure(recording.completion) { (error: DatabaseError) in
-                XCTAssertEqual(error.resultCode, .SQLITE_ERROR)
-                XCTAssertEqual(error.sql, "THIS IS NOT SQL")
-            }
+      func test(reader: some DatabaseReader) throws {
+        let publisher = reader.readPublisher(value: { db in
+          try Row.fetchAll(db, sql: "THIS IS NOT SQL")
+        })
+        let recorder = publisher.record()
+        let recording = try wait(for: recorder.recording, timeout: 5)
+        XCTAssertTrue(recording.output.isEmpty)
+        assertFailure(recording.completion) { (error: DatabaseError) in
+          XCTAssertEqual(error.resultCode, .SQLITE_ERROR)
+          XCTAssertEqual(error.sql, "THIS IS NOT SQL")
         }
-        
-        try Test(test).run { try DatabaseQueue() }
-        try Test(test).runAtTemporaryDatabasePath { try DatabaseQueue(path: $0) }
-        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0) }
-        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
+      }
+
+      try Test(test).run { try DatabaseQueue() }
+      try Test(test).runAtTemporaryDatabasePath { try DatabaseQueue(path: $0) }
+      try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0) }
+      try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
         try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshotPool() }
-#endif
+      #endif
     }
-    
+
     // MARK: -
-    
+
     func testReadPublisherIsAsynchronous() throws {
-        func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
-            try writer.write(Player.createTable)
-            return writer
-        }
-        
-        func test(reader: some DatabaseReader) throws {
-            let expectation = self.expectation(description: "")
-            let semaphore = DispatchSemaphore(value: 0)
-            let cancellable = reader
-                .readPublisher(value: { db in
-                    try Player.fetchCount(db)
-                })
-                .sink(
-                    receiveCompletion: { _ in },
-                    receiveValue: { _ in
-                        semaphore.wait()
-                        expectation.fulfill()
-                })
-            
-            semaphore.signal()
-            waitForExpectations(timeout: 5, handler: nil)
-            cancellable.cancel()
-        }
-        
-        try Test(test).run { try setUp(DatabaseQueue()) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshotPool() }
-#endif
-    }
-    
-    // MARK: -
-    
-    func testReadPublisherDefaultScheduler() throws {
-        func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
-            try writer.write(Player.createTable)
-            return writer
-        }
-        
-        func test(reader: some DatabaseReader) {
-            let expectation = self.expectation(description: "")
-            let cancellable = reader
-                .readPublisher(value: { db in
-                    try Player.fetchCount(db)
-                })
-                .sink(
-                    receiveCompletion: { completion in
-                        dispatchPrecondition(condition: .onQueue(.main))
-                        expectation.fulfill()
-                },
-                    receiveValue: { _ in
-                        dispatchPrecondition(condition: .onQueue(.main))
-                })
-            
-            waitForExpectations(timeout: 5, handler: nil)
-            cancellable.cancel()
-        }
-        
-        try Test(test).run { try setUp(DatabaseQueue()) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshotPool() }
-#endif
-    }
-    
-    // MARK: -
-    
-    func testReadPublisherCustomScheduler() throws {
-        func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
-            try writer.write(Player.createTable)
-            return writer
-        }
-        
-        func test(reader: some DatabaseReader) {
-            let queue = DispatchQueue(label: "test")
-            let expectation = self.expectation(description: "")
-            let cancellable = reader
-                .readPublisher(receiveOn: queue, value: { db in
-                    try Player.fetchCount(db)
-                })
-                .sink(
-                    receiveCompletion: { completion in
-                        dispatchPrecondition(condition: .onQueue(queue))
-                        expectation.fulfill()
-                },
-                    receiveValue: { _ in
-                        dispatchPrecondition(condition: .onQueue(queue))
-                })
-            
-            waitForExpectations(timeout: 5, handler: nil)
-            cancellable.cancel()
-        }
-        
-        try Test(test).run { try setUp(DatabaseQueue()) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
-        try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshotPool() }
-#endif
-    }
-    
-    // MARK: -
-    
-    func testReadPublisherIsReadonly() throws {
-        func test(reader: some DatabaseReader) throws {
-            let publisher = reader.readPublisher(value: { db in
-                try Player.createTable(db)
+      func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
+        try writer.write(Player.createTable)
+        return writer
+      }
+
+      func test(reader: some DatabaseReader) throws {
+        let expectation = self.expectation(description: "")
+        let semaphore = DispatchSemaphore(value: 0)
+        let cancellable =
+          reader
+          .readPublisher(value: { db in
+            try Player.fetchCount(db)
+          })
+          .sink(
+            receiveCompletion: { _ in },
+            receiveValue: { _ in
+              semaphore.wait()
+              expectation.fulfill()
             })
-            let recorder = publisher.record()
-            let recording = try wait(for: recorder.recording, timeout: 5)
-            XCTAssertTrue(recording.output.isEmpty)
-            assertFailure(recording.completion) { (error: DatabaseError) in
-                XCTAssertEqual(error.resultCode, .SQLITE_READONLY)
-            }
+
+        semaphore.signal()
+        waitForExpectations(timeout: 5, handler: nil)
+        cancellable.cancel()
+      }
+
+      try Test(test).run { try setUp(DatabaseQueue()) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
+        try Test(test).runAtTemporaryDatabasePath {
+          try setUp(DatabasePool(path: $0)).makeSnapshotPool()
         }
-        
-        try Test(test).run { try DatabaseQueue() }
-        try Test(test).runAtTemporaryDatabasePath { try DatabaseQueue(path: $0) }
-        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0) }
-        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshot() }
-#if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER)
-        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshotPool() }
-#endif
+      #endif
     }
-}
+
+    // MARK: -
+
+    func testReadPublisherDefaultScheduler() throws {
+      func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
+        try writer.write(Player.createTable)
+        return writer
+      }
+
+      func test(reader: some DatabaseReader) {
+        let expectation = self.expectation(description: "")
+        let cancellable =
+          reader
+          .readPublisher(value: { db in
+            try Player.fetchCount(db)
+          })
+          .sink(
+            receiveCompletion: { completion in
+              dispatchPrecondition(condition: .onQueue(.main))
+              expectation.fulfill()
+            },
+            receiveValue: { _ in
+              dispatchPrecondition(condition: .onQueue(.main))
+            })
+
+        waitForExpectations(timeout: 5, handler: nil)
+        cancellable.cancel()
+      }
+
+      try Test(test).run { try setUp(DatabaseQueue()) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
+        try Test(test).runAtTemporaryDatabasePath {
+          try setUp(DatabasePool(path: $0)).makeSnapshotPool()
+        }
+      #endif
+    }
+
+    // MARK: -
+
+    func testReadPublisherCustomScheduler() throws {
+      func setUp<Writer: DatabaseWriter>(_ writer: Writer) throws -> Writer {
+        try writer.write(Player.createTable)
+        return writer
+      }
+
+      func test(reader: some DatabaseReader) {
+        let queue = DispatchQueue(label: "test")
+        let expectation = self.expectation(description: "")
+        let cancellable =
+          reader
+          .readPublisher(
+            receiveOn: queue,
+            value: { db in
+              try Player.fetchCount(db)
+            }
+          )
+          .sink(
+            receiveCompletion: { completion in
+              dispatchPrecondition(condition: .onQueue(queue))
+              expectation.fulfill()
+            },
+            receiveValue: { _ in
+              dispatchPrecondition(condition: .onQueue(queue))
+            })
+
+        waitForExpectations(timeout: 5, handler: nil)
+        cancellable.cancel()
+      }
+
+      try Test(test).run { try setUp(DatabaseQueue()) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabaseQueue(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)) }
+      try Test(test).runAtTemporaryDatabasePath { try setUp(DatabasePool(path: $0)).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
+        try Test(test).runAtTemporaryDatabasePath {
+          try setUp(DatabasePool(path: $0)).makeSnapshotPool()
+        }
+      #endif
+    }
+
+    // MARK: -
+
+    func testReadPublisherIsReadonly() throws {
+      func test(reader: some DatabaseReader) throws {
+        let publisher = reader.readPublisher(value: { db in
+          try Player.createTable(db)
+        })
+        let recorder = publisher.record()
+        let recording = try wait(for: recorder.recording, timeout: 5)
+        XCTAssertTrue(recording.output.isEmpty)
+        assertFailure(recording.completion) { (error: DatabaseError) in
+          XCTAssertEqual(error.resultCode, .SQLITE_READONLY)
+        }
+      }
+
+      try Test(test).run { try DatabaseQueue() }
+      try Test(test).runAtTemporaryDatabasePath { try DatabaseQueue(path: $0) }
+      try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0) }
+      try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshot() }
+      #if SQLITE_ENABLE_SNAPSHOT || (!GRDBCUSTOMSQLITE && !GRDBCIPHER && !os(Linux))
+        try Test(test).runAtTemporaryDatabasePath { try DatabasePool(path: $0).makeSnapshotPool() }
+      #endif
+    }
+  }
 #endif
