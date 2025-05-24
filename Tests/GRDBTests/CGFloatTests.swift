@@ -1,3 +1,4 @@
+import Foundation
 //import CoreGraphics
 import GRDB
 import XCTest
