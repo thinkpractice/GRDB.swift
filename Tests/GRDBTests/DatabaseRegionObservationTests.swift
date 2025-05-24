@@ -2,28 +2,31 @@ import XCTest
 import GRDB
 
 class DatabaseRegionObservationTests: GRDBTestCase {
+
+    #if canImport(Combine)
     // Test passes if it compiles.
     // See <https://github.com/groue/GRDB.swift/issues/1541>
     func testAnyDatabaseWriter(writer: any DatabaseWriter) throws {
         let observation = DatabaseRegionObservation(tracking: .fullDatabase)
-        
+
         _ = observation.start(in: writer, onError: { _ in }, onChange: { _ in })
         _ = observation.publisher(in: writer)
     }
-    
+    #endif
+
     func testDatabaseRegionObservation_FullDatabase() throws {
         let dbQueue = try makeDatabaseQueue()
         try dbQueue.write {
             try $0.execute(sql: "CREATE TABLE t1(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
             try $0.execute(sql: "CREATE TABLE t2(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
         }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.assertForOverFulfill = true
         notificationExpectation.expectedFulfillmentCount = 3
-        
+
         let observation = DatabaseRegionObservation(tracking: .fullDatabase)
-        
+
         let countMutex = Mutex(0)
         let cancellable = observation.start(
             in: dbQueue,
@@ -32,7 +35,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 countMutex.increment()
                 notificationExpectation.fulfill()
             })
-        
+
         try withExtendedLifetime(cancellable) {
             try dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO t1 (id, name) VALUES (1, 'foo')")
@@ -45,7 +48,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 try db.execute(sql: "INSERT INTO t2 (id, name) VALUES (2, 'foo')")
             }
             waitForExpectations(timeout: 1, handler: nil)
-            
+
             XCTAssertEqual(countMutex.load(), 3)
         }
     }
@@ -55,12 +58,12 @@ class DatabaseRegionObservationTests: GRDBTestCase {
         try dbQueue.write {
             try $0.execute(sql: "CREATE TABLE t(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
         }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.isInverted = true
-        
+
         let observation = DatabaseRegionObservation(tracking: .fullDatabase)
-        
+
         let cancellable = observation.start(
             in: dbQueue,
             onError: { XCTFail("Unexpected error: \($0)") },
@@ -68,7 +71,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 notificationExpectation.fulfill()
             })
         cancellable.cancel()
-        
+
         try withExtendedLifetime(cancellable) {
             try dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO t (id, name) VALUES (1, 'foo')")
@@ -76,23 +79,23 @@ class DatabaseRegionObservationTests: GRDBTestCase {
             waitForExpectations(timeout: 0.1, handler: nil)
         }
     }
-    
+
     func testDatabaseRegionObservationVariadic() throws {
         let dbQueue = try makeDatabaseQueue()
         try dbQueue.write {
             try $0.execute(sql: "CREATE TABLE t1(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
             try $0.execute(sql: "CREATE TABLE t2(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
         }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.assertForOverFulfill = true
         notificationExpectation.expectedFulfillmentCount = 3
-        
+
         let request1 = SQLRequest<Row>(sql: "SELECT * FROM t1 ORDER BY id")
         let request2 = SQLRequest<Row>(sql: "SELECT * FROM t2 ORDER BY id")
-        
+
         let observation = DatabaseRegionObservation(tracking: request1, request2)
-        
+
         let countMutex = Mutex(0)
         let cancellable = observation.start(
             in: dbQueue,
@@ -101,7 +104,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 countMutex.increment()
                 notificationExpectation.fulfill()
             })
-        
+
         try withExtendedLifetime(cancellable) {
             try dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO t1 (id, name) VALUES (1, 'foo')")
@@ -114,27 +117,27 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 try db.execute(sql: "INSERT INTO t2 (id, name) VALUES (2, 'foo')")
             }
             waitForExpectations(timeout: 1, handler: nil)
-            
+
             XCTAssertEqual(countMutex.load(), 3)
         }
     }
-    
+
     func testDatabaseRegionObservationArray() throws {
         let dbQueue = try makeDatabaseQueue()
         try dbQueue.write {
             try $0.execute(sql: "CREATE TABLE t1(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
             try $0.execute(sql: "CREATE TABLE t2(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)")
         }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.assertForOverFulfill = true
         notificationExpectation.expectedFulfillmentCount = 3
-        
+
         let request1 = SQLRequest<Row>(sql: "SELECT * FROM t1 ORDER BY id")
         let request2 = SQLRequest<Row>(sql: "SELECT * FROM t2 ORDER BY id")
-        
+
         let observation = DatabaseRegionObservation(tracking: [request1, request2])
-        
+
         let countMutex = Mutex(0)
         let cancellable = observation.start(
             in: dbQueue,
@@ -143,7 +146,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 countMutex.increment()
                 notificationExpectation.fulfill()
             })
-        
+
         try withExtendedLifetime(cancellable) {
             try dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO t1 (id, name) VALUES (1, 'foo')")
@@ -156,21 +159,21 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 try db.execute(sql: "INSERT INTO t2 (id, name) VALUES (2, 'foo')")
             }
             waitForExpectations(timeout: 1, handler: nil)
-            
+
             XCTAssertEqual(countMutex.load(), 3)
         }
     }
-    
+
     func testDatabaseRegionDefaultCancellation() throws {
         let dbQueue = try makeDatabaseQueue()
         try dbQueue.write { try $0.execute(sql: "CREATE TABLE t(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)") }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.assertForOverFulfill = true
         notificationExpectation.expectedFulfillmentCount = 2
-        
+
         let observation = DatabaseRegionObservation(tracking: SQLRequest<Row>(sql: "SELECT * FROM t ORDER BY id"))
-        
+
         let countMutex = Mutex(0)
         do {
             let cancellable = observation.start(
@@ -180,7 +183,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                     countMutex.increment()
                     notificationExpectation.fulfill()
                 })
-            
+
             try withExtendedLifetime(cancellable) {
                 try dbQueue.write { db in
                     try db.execute(sql: "INSERT INTO t (id, name) VALUES (1, 'foo')")
@@ -195,20 +198,20 @@ class DatabaseRegionObservationTests: GRDBTestCase {
             try db.execute(sql: "INSERT INTO t (id, name) VALUES (3, 'baz')")
         }
         waitForExpectations(timeout: 1, handler: nil)
-        
+
         XCTAssertEqual(countMutex.load(), 2)
     }
-    
+
     func testDatabaseRegionExtentNextTransaction() throws {
         let dbQueue = try makeDatabaseQueue()
         try dbQueue.write { try $0.execute(sql: "CREATE TABLE t(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)") }
-        
+
         let notificationExpectation = expectation(description: "notification")
         notificationExpectation.assertForOverFulfill = true
         notificationExpectation.expectedFulfillmentCount = 1
-        
+
         let observation = DatabaseRegionObservation(tracking: SQLRequest<Row>(sql: "SELECT * FROM t ORDER BY id"))
-        
+
         let countMutex = Mutex(0)
         nonisolated(unsafe) var cancellable: AnyDatabaseCancellable?
         cancellable = observation.start(
@@ -219,7 +222,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 countMutex.increment()
                 notificationExpectation.fulfill()
             })
-        
+
         try withExtendedLifetime(cancellable) {
             try dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO t (id, name) VALUES (1, 'foo')")
@@ -229,7 +232,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 try db.execute(sql: "INSERT INTO t (id, name) VALUES (2, 'bar')")
             }
             waitForExpectations(timeout: 1, handler: nil)
-            
+
             XCTAssertEqual(countMutex.load(), 1)
         }
     }
@@ -239,12 +242,12 @@ class DatabaseRegionObservationTests: GRDBTestCase {
         try dbQueue1.write { db in
             try db.execute(sql: "CREATE TABLE test(a)")
         }
-        
+
         let undetectedExpectation = expectation(description: "undetected")
         undetectedExpectation.isInverted = true
 
         let detectedExpectation = expectation(description: "detected")
-        
+
         let observation = DatabaseRegionObservation(tracking: Table("test"))
         let cancellable = observation.start(
             in: dbQueue1,
@@ -253,7 +256,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 undetectedExpectation.fulfill()
                 detectedExpectation.fulfill()
             })
-        
+
         try withExtendedLifetime(cancellable) {
             // Change performed from external connection is not detected...
             let dbQueue2 = try makeDatabaseQueue(filename: "test.sqlite")
@@ -261,7 +264,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
                 try db.execute(sql: "INSERT INTO test (a) VALUES (1)")
             }
             wait(for: [undetectedExpectation], timeout: 2)
-            
+
             // ... until we perform an explicit change notification
             try dbQueue1.write { db in
                 try db.notifyChanges(in: Table("test"))
@@ -269,7 +272,7 @@ class DatabaseRegionObservationTests: GRDBTestCase {
             wait(for: [detectedExpectation], timeout: 2)
         }
     }
-    
+
     // Regression test for https://github.com/groue/GRDB.swift/issues/514
     // TODO: uncomment and make this test pass.
     // Well, actually, selecting only the rowid has SQLite authorizer advertise
