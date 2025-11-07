@@ -1,0 +1,55 @@
+# https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md
+
+name: "Ubuntu Linux CI"
+
+on:
+  push:
+    branches: 
+      - master
+      - development
+    paths:
+      - 'GRDB/**'
+      - 'Tests/**'
+      - '.github/workflows/**'
+      - 'Makefile'
+      - 'Package.swift'
+      - 'SQLiteCustom/src'
+  pull_request:
+    paths:
+      - 'GRDB/**'
+      - 'Tests/**'
+      - '.github/workflows/**'
+      - 'Makefile'
+      - 'Package.swift'
+      - 'SQLiteCustom/src'
+
+concurrency: 
+  group: ${{ github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+
+jobs:
+  build-and-test-on-linux:
+    runs-on: ${{ matrix.os }}
+    env:
+      DEVELOPER_DIR: "/Applications/${{ matrix.xcode }}/Contents/Developer"
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        swift: ["6.1.0", "6.2.0"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        
+      - name: Setup Environment
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ matrix.swift }}
+      
+      - name: Build SPM Package
+        run: swift build -c release -v
+      
+      - name: Run tests
+        run: swift test -c release
