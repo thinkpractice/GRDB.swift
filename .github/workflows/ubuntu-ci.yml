@@ -35,9 +35,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        swift: ["6.1.0"]
+        swift: ["6.2", "6.1.0"]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -85,13 +86,11 @@ jobs:
           hash -r
           swiftly install ${{ matrix.swift }} --assume-yes --use
           . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"  
-      # - name: Setup Environment
-      #   uses: swift-actions/setup-swift@v2
-      #   with:
-      #     swift-version: ${{ matrix.swift }}
       
       - name: Build SPM Package
-        run: swift build -c release
+        run: |
+          swift build -c release
       
       - name: Run tests
-        run: swift test -c release
+        run: |
+          swift test -c release
