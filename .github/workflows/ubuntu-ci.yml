@@ -33,8 +33,6 @@ permissions:
 jobs:
   build-and-test-on-linux:
     runs-on: ${{ matrix.os }}
-    env:
-      DEVELOPER_DIR: "/Applications/${{ matrix.xcode }}/Contents/Developer"
     timeout-minutes: 60
     strategy:
       matrix:
