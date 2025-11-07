@@ -75,7 +75,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}
-          key: swiftly-${{ runner.os }}-${{ matrix.swift }}
+          key: swiftly-${{ matrix.os }}-${{ matrix.swift }}
       
       - name: Install Swift Using Swiftly  
         if: steps.cache-swiftly.outputs.cache-hit != 'true'
