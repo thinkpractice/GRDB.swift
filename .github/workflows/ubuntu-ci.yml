@@ -1,6 +1,6 @@
 # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md
 
-name: "Ubuntu Linux CI"
+name: "Linux CI"
 
 on:
   push:
