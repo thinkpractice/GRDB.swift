@@ -42,10 +42,52 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
         
-      - name: Setup Environment
-        uses: swift-actions/setup-swift@v2
+      - name: Install Swift Dependencies
+        run: sudo apt-get update \
+          sudo apt-get install -y \
+          binutils \
+          git \
+          gnupg2 \
+          libc6-dev \
+          libcurl4-openssl-dev \
+          libedit2 \
+          libgcc-13-dev \
+          libpython3-dev \
+          libsqlite3-0 \
+          libstdc++-13-dev \
+          libxml2-dev \
+          libz3-dev \
+          pkg-config \
+          python3-lldb \
+          tzdata \
+          unzip \
+          zip \
+          zlib1g-dev \
+          wget \
+          curl \
+          ca-certificates \
+          util-linux
+      
+      - name: Cache Swiftly toolchains
+        id: cache-swiftly
+        uses: actions/cache@v4
         with:
-          swift-version: ${{ matrix.swift }}
+          path: ~/.swiftly
+          key: swiftly-${{ runner.os }}-${{ matrix.swift }}
+      
+      - name: Install Swift Using Swiftly  
+        run: |
+          curl -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz
+          tar zxf swiftly-$(uname -m).tar.gz
+          ./swiftly init --quiet-shell-followup
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
+          hash -r
+          swiftly install ${{ matrix.swift }} --assume-yes --use
+          . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"  
+      # - name: Setup Environment
+      #   uses: swift-actions/setup-swift@v2
+      #   with:
+      #     swift-version: ${{ matrix.swift }}
       
       - name: Build SPM Package
         run: swift build -c release -v
