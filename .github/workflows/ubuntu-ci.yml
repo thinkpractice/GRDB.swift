@@ -91,7 +91,7 @@ jobs:
       #     swift-version: ${{ matrix.swift }}
       
       - name: Build SPM Package
-        run: swift build -c release -v
+        run: swift build -c release
       
       - name: Run tests
         run: swift test -c release
