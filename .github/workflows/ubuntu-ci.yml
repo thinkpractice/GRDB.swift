@@ -7,7 +7,6 @@ on:
     branches: 
       - master
       - development
-      - grdb_linux_changes
     paths:
       - 'GRDB/**'
       - 'Tests/**'
